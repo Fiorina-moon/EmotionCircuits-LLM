@@ -14,6 +14,7 @@ Compute sigma from .pt files under outputs/{model_name}/02_emotion_directions/re
 
 import torch
 import os
+import sys
 import json
 import argparse
 from pathlib import Path
@@ -26,7 +27,11 @@ from collections import defaultdict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = 'llama32_3b'
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
 SUBDIRS = ['attention', 'mlp']
 EMOTIONS = ['anger', 'sadness', 'happiness', 'fear', 'surprise', 'disgust']
 
@@ -50,12 +55,12 @@ def main():
     # Path setup
     # 输入路径：从02_emotion_directions读取残差数据
     # Input path: read residual data from 02_emotion_directions
-    input_dir = PROJECT_ROOT / 'outputs' / args.model_name / '02_emotion_directions'
+    input_dir = src(args.model_name, '02_emotion_directions')
     residual_dir = input_dir / 'residual_dump'
-    
+
     # 输出路径：保存到06_emotion_circuit_integration
     # Output path: save to 06_emotion_circuit_integration
-    output_dir = PROJECT_ROOT / 'outputs' / args.model_name / '06_emotion_circuit_integration'
+    output_dir = ensure_out(args.model_name, '06_emotion_circuit_integration')
     os.makedirs(output_dir, exist_ok=True)
     
     # 检查输入目录

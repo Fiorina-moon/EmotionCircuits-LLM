@@ -15,6 +15,13 @@ import os, json, argparse, time, math, sys
 from pathlib import Path
 from typing import Dict, Any
 
+# 统一配置（会加载仓库根目录的 .env）
+# Unified config (also loads .env from the repository root)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
+STAGE_DIR = "03_emotion_steered_generation"
+
 # 6种情绪
 # 6 emotions
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
@@ -151,7 +158,7 @@ def get_processed_keys(output_file):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="llama32_3b",
+    parser.add_argument("--model_name", type=str, default=MODEL_NAME,
                        help="模型文件夹名称 Model folder name")
     parser.add_argument("--dataset_name", type=str, default="test_set",
                        help="数据集名称 Dataset name")
@@ -164,8 +171,8 @@ def main():
     model_name = args.model_name
     dataset_name = args.dataset_name
     
-    input_jsonl = Path("outputs") / model_name / "03_emotion_steered_generation" / dataset_name / "steered_outputs.jsonl"
-    output_dir = Path("outputs") / model_name / "03_emotion_steered_generation" / dataset_name
+    input_jsonl = src(model_name, STAGE_DIR, dataset_name, "steered_outputs.jsonl")
+    output_dir = ensure_out(model_name, STAGE_DIR, dataset_name)
     output_jsonl = output_dir / "labeled_results.jsonl"
     
     if not input_jsonl.exists():

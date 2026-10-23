@@ -17,12 +17,11 @@ Dimensions are (B, T, H) or (B, T, I), save all 6 emotions data by group
 - 输出 Output: outputs/{model_name}/05_emotion_diff_vector_computation/o_proj_input/ 和 down_proj_input/
 """
 
-import os, json, time, traceback
+import os, sys, json, time, traceback
 from pathlib import Path
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 from collections import defaultdict
 
 # ============== 路径与基本配置 / Paths and Basic Configuration ==============
@@ -31,36 +30,35 @@ from collections import defaultdict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
-# accepted样本路径
-# Path to accepted samples
-ACCEPTED_PATH = PROJECT_ROOT / f"outputs/{MODEL_NAME}/01_emotion_elicited_generation_prompt_based/labeled/sev/accepted.jsonl"
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import (MODEL_NAME, MODEL, ensure_out, hf_token, maybe_login,
+                                    resolve_device, src)
+
+STAGE_DIR = "05_emotion_diff_vector_computation"
+
+# accepted样本路径（个人目录优先，回退仓库）
+# Path to accepted samples (personal first, repo fallback)
+ACCEPTED_PATH = src(MODEL_NAME, "01_emotion_elicited_generation_prompt_based", "labeled", "sev", "accepted.jsonl")
 # attention o_proj输入保存目录
 # Directory to save attention o_proj inputs
-ATTN_SAVE_DIR = PROJECT_ROOT / f"outputs/{MODEL_NAME}/05_emotion_diff_vector_computation/o_proj_input"
+ATTN_SAVE_DIR = ensure_out(MODEL_NAME, STAGE_DIR, "o_proj_input")
 # MLP down_proj输入保存目录
 # Directory to save MLP down_proj inputs
-MLP_SAVE_DIR = PROJECT_ROOT / f"outputs/{MODEL_NAME}/05_emotion_diff_vector_computation/down_proj_input"
-ATTN_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-MLP_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+MLP_SAVE_DIR = ensure_out(MODEL_NAME, STAGE_DIR, "down_proj_input")
 
 # 六个基础情绪
 # Six basic emotions
 EMOS6 = ["anger","sadness","happiness","fear","surprise","disgust"]
 
-MODEL = "meta-llama/Llama-3.2-3B-Instruct"
 DTYPE = torch.float32
-DEVICE = "cuda:0"
+DEVICE = resolve_device()
 
-# HF token处理（优先使用环境变量，如果没有则尝试默认登录）
-# HF token handling (prioritize env var, otherwise use default login)
-HF_TOKEN = os.environ.get('HF_TOKEN', None)
-if HF_TOKEN:
-    login(token=HF_TOKEN)
-else:
-    # 如果已经通过 huggingface-cli login 登录过，这里会自动使用已保存的 token
-    # If already logged in via huggingface-cli login, this will use saved token
-    pass
+# HF token处理（本地模型为 None，不会联网）
+# HF token handling (None for a local model, no network access)
+maybe_login(MODEL)
+HF_TOKEN = hf_token(MODEL)
 
 # ============== 加载模型与分词器 / Load Model and Tokenizer ==============
 print("Loading model and tokenizer...")

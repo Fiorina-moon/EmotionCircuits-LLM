@@ -14,7 +14,7 @@ Analyze sublayer importance: average across alpha values and normalize to probab
   - 输出 Output: outputs/{model_name}/06_emotion_circuit_integration/importance_all_alpha_mean_emotion_all_probability.csv
 """
 
-import os
+import os, sys
 import argparse
 from pathlib import Path
 import pandas as pd
@@ -27,7 +27,10 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
 
 # ============== 工具函数 ==============
 # ============== Utility Functions ==============
@@ -124,13 +127,12 @@ def main():
     
     # 路径配置
     # Path configuration
-    base_dir = PROJECT_ROOT / "outputs" / args.model_name
-    dir_06 = base_dir / "06_emotion_circuit_integration"
+    dir_06 = ensure_out(args.model_name, "06_emotion_circuit_integration")
     dir_importance = dir_06 / "sublayer_importance"
     
-    # 输入输出文件
-    # Input/Output files
-    input_csv = dir_importance / "importance_all_alphas.csv"
+    # 输入输出文件（读取个人目录优先，回退仓库；写入个人目录）
+    # Input/Output files (read personal first with repo fallback; write to personal)
+    input_csv = src(args.model_name, "06_emotion_circuit_integration", "sublayer_importance", "importance_all_alphas.csv")
     output_csv = dir_06 / "importance_all_alpha_mean_emotion_all_probability.csv"
     
     # 检查输入文件

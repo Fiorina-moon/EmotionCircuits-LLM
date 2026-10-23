@@ -22,7 +22,7 @@ Compute unit importance I_{L,p} for each "sublayer(Attention/MLP)×layer"
   - 输出 Output: outputs/{model_name}/06_emotion_circuit_integration/sublayer_importance/
 """
 
-import os, json, argparse, random
+import os, sys, json, argparse, random
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -37,8 +37,12 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_NAME = "llama32_3b"
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, MODEL, ensure_out, hf_token, maybe_login, src
+
+STAGE_DIR = "06_emotion_circuit_integration"
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
 N_LAYERS = 28
 H = 3072
@@ -467,15 +471,15 @@ def main():
 
     # 路径配置
     # Paths configuration
-    base_dir = PROJECT_ROOT / "outputs" / args.model_name
-    dir_02 = base_dir / "02_emotion_directions"
-    dir_01 = base_dir / "01_emotion_elicited_generation_prompt_based"
-    dir_06 = ensure_dir(base_dir / "06_emotion_circuit_integration")
-    dir_out = ensure_dir(dir_06 / "sublayer_importance")
+    base_dir = src(args.model_name)
+    dir_02 = src(args.model_name, "02_emotion_directions")
+    dir_01 = src(args.model_name, "01_emotion_elicited_generation_prompt_based")
+    dir_06 = ensure_out(args.model_name, STAGE_DIR)
+    dir_out = ensure_out(args.model_name, STAGE_DIR, "sublayer_importance")
 
-    # 加载 σ
-    # Load σ
-    sigma_map = load_sigma(str(dir_06))
+    # 加载 σ（个人目录优先，回退仓库目录）
+    # Load σ (personal first, repo fallback)
+    sigma_map = load_sigma(str(src(args.model_name, STAGE_DIR)))
 
     # 加载子层情绪向量（attention / mlp）{"attention":{emo:[L->np(H,)]}, "mlp":{...}}
     # Load sublayer emotion vectors (attention / mlp) {"attention":{emo:[L->np(H,)]}, "mlp":{...}}
@@ -498,10 +502,11 @@ def main():
     # 模型加载
     # Model loading
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    
-    # HuggingFace token处理
-    # HuggingFace token handling
-    HF_TOKEN = os.environ.get('HF_TOKEN', None)
+
+    # HuggingFace token处理（本地模型为 None，不联网）
+    # HuggingFace token handling (None for a local model, no network access)
+    maybe_login(MODEL)
+    HF_TOKEN = hf_token(MODEL)
     
     # 加载模型和tokenizer
     # Load model and tokenizer

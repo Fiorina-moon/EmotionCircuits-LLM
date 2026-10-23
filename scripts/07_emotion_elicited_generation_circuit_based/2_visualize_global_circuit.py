@@ -42,7 +42,11 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import (MODEL, MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_model, src)
 EMOS6 = ["anger", "sadness", "happiness", "fear", "disgust", "surprise"]
 VALENCES = ["positive", "neutral", "negative"]
 
@@ -69,7 +73,7 @@ def load_global_circuit_data(model_name, max_samples=None):
     
     返回 Returns: 包含残差流数据的列表 list containing residual stream data
     """
-    residual_dir = PROJECT_ROOT / "outputs" / model_name / "07_emotion_elicited_generation_circuit_based" / "global_circuit_residuals"
+    residual_dir = src(model_name, "07_emotion_elicited_generation_circuit_based", "global_circuit_residuals")
     json_path = residual_dir / "circuit_residual_streams_outputs.jsonl"
     
     if not json_path.exists():
@@ -308,8 +312,8 @@ def main():
     
     # 创建输出目录
     # Create output directory
-    output_dir = PROJECT_ROOT / "outputs" / args.model_name / "07_emotion_elicited_generation_circuit_based" / "global_circuit_residuals" / "visualizations"
-    ensure_dir(output_dir)
+    output_dir = ensure_out(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                            "global_circuit_residuals", "visualizations")
     print(f"[+] 输出目录 Output directory: {output_dir}")
     
     # 确定要处理的层

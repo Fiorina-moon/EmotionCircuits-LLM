@@ -36,8 +36,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import (MODEL, MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_device, resolve_model, src)
 VALENCES = ["positive", "neutral", "negative"]
 
 # ============== 工具函数 ==============
@@ -118,13 +121,15 @@ def main():
     ap = argparse.ArgumentParser(description="基线文本生成（无情绪注入）Baseline text generation (no emotion injection)")
     ap.add_argument("--model_name", type=str, default=MODEL_NAME,
                     help="模型名称 Model name")
+    ap.add_argument("--model", type=str, default=MODEL,
+                    help="模型路径或HF ID Model path or HF id（默认读取 config.yaml）")
     ap.add_argument("--max_new_tokens", type=int, default=100,
                     help="最大新token数 Max new tokens")
     ap.add_argument("--data_path", type=str, default="data/user_inputs_test_1.jsonl",
                     help="用户输入数据路径 User input data path")
     ap.add_argument("--output_filename", type=str, default="baseline_text_generation_outputs.jsonl",
                     help="输出文件名 Output filename")
-    ap.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu",
+    ap.add_argument("--device", default=resolve_device(),
                     help="设备 Device")
     args = ap.parse_args()
 
@@ -148,29 +153,28 @@ def main():
 
     # 2) 加载模型
     # 2) Load model
-    print(f"\n[+] 正在加载模型 Loading model: {MODEL}...")
-    
-    # HuggingFace token处理
-    # HuggingFace token handling
-    HF_TOKEN = os.environ.get('HF_TOKEN', None)
-    
+    model_id = resolve_model(args.model)
+    maybe_login(model_id)
+    token = hf_token(model_id)
+    print(f"\n[+] 正在加载模型 Loading model: {model_id}...")
+
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
+        model_id,
         torch_dtype=torch.float16,
         device_map=args.device,
-        token=HF_TOKEN if HF_TOKEN else True
+        token=token
     )
     print(f"[+] 模型已加载 Model loaded successfully!")
-    
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=HF_TOKEN if HF_TOKEN else True)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, token=token)
     print(f"[+] Tokenizer已加载 Tokenizer loaded successfully!")
     print()
 
     # 3) 处理每个用户输入
     # 3) Process each user input
     start_time = time.time()
-    output_dir = PROJECT_ROOT / "outputs" / args.model_name / "07_emotion_elicited_generation_circuit_based" / "baseline_generation"
-    ensure_dir(output_dir)
+    output_dir = ensure_out(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                            "baseline_generation")
     output_path = output_dir / args.output_filename
 
     print(f"[+] 开始生成基线文本 Starting baseline text generation...")

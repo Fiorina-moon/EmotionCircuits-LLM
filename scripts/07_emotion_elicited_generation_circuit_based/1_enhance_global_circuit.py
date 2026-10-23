@@ -62,8 +62,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import (MODEL, MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_device, resolve_model, src)
 D_MODEL = 3072  # Llama-3.2-3B hidden size
 HEADS_PER_LAYER = 24
 HEAD_DIM = D_MODEL // HEADS_PER_LAYER  # 128
@@ -92,7 +95,7 @@ def load_global_circuit_allocation(emotion, model_name=MODEL_NAME):
     
     返回 Returns: neuron_ids, head_ids
     """
-    json_path = PROJECT_ROOT / "outputs" / model_name / "06_emotion_circuit_integration" / "global_circuit" / f"{emotion}.json"
+    json_path = src(model_name, "06_emotion_circuit_integration", "global_circuit", f"{emotion}.json")
     with open(json_path, 'r') as f:
         data = json.load(f)
     
@@ -113,7 +116,7 @@ def load_emotion_diff_vectors(model_name, target_emotion):
     加载MLP神经元情绪差分向量Δμ
     Load MLP neuron emotion difference vectors Δμ
     """
-    mlp_diff_dir = PROJECT_ROOT / "outputs" / model_name / "05_emotion_diff_vector_computation" / "mlp_emotion_diff"
+    mlp_diff_dir = src(model_name, "05_emotion_diff_vector_computation", "mlp_emotion_diff")
     npz_file = mlp_diff_dir / "emo_diff_all.npz"
     
     if not npz_file.exists():
@@ -136,7 +139,7 @@ def load_head_differences(emotion, model_name=MODEL_NAME):
     加载attention head差分向量
     Load attention head difference vectors
     """
-    head_diff_dir = PROJECT_ROOT / "outputs" / model_name / "05_emotion_diff_vector_computation" / "attention_emotion_diff" / "emo_diff" / emotion
+    head_diff_dir = src(model_name, "05_emotion_diff_vector_computation", "attention_emotion_diff", "emo_diff", emotion)
     head_diffs = {}
     
     for layer in range(28):
@@ -405,13 +408,15 @@ def main():
     parser = argparse.ArgumentParser(description="基于全局电路的情绪注入 - 收集残差流 Global circuit-based emotion injection - collect residual streams")
     parser.add_argument("--model_name", default=MODEL_NAME,
                         help="模型名称 Model name")
+    parser.add_argument("--model", type=str, default=MODEL,
+                        help="模型路径或HF ID Model path or HF id（默认读取 config.yaml）")
     parser.add_argument("--scale_factor", type=float, default=1.0,
                         help="情绪注入强度（anger会自动使用0.8）Emotion injection strength (anger auto uses 0.8)")
     parser.add_argument("--data_path", type=str, default="data/user_inputs_test_1.jsonl",
                         help="用户输入数据路径 User input data path")
     parser.add_argument("--output_filename", type=str, default="circuit_residual_streams_outputs.jsonl",
                         help="输出文件名 Output filename")
-    parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu",
+    parser.add_argument("--device", default=resolve_device(),
                         help="设备 Device")
     
     args = parser.parse_args()
@@ -434,29 +439,28 @@ def main():
 
     # 2) 加载模型
     # 2) Load model
-    print(f"\n[+] 正在加载模型 Loading model: {MODEL}...")
-    
-    # HuggingFace token处理
-    # HuggingFace token handling
-    HF_TOKEN = os.environ.get('HF_TOKEN', None)
-    
+    model_id = resolve_model(args.model)
+    maybe_login(model_id)
+    token = hf_token(model_id)
+    print(f"\n[+] 正在加载模型 Loading model: {model_id}...")
+
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL, 
-        torch_dtype=torch.float16, 
+        model_id,
+        torch_dtype=torch.float16,
         device_map=args.device,
-        token=HF_TOKEN if HF_TOKEN else True
+        token=token
     )
     print(f"[+] 模型已加载 Model loaded successfully!")
-    
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=HF_TOKEN if HF_TOKEN else True)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, token=token)
     print(f"[+] Tokenizer已加载 Tokenizer loaded successfully!")
     print()
 
     # 3) 处理每个用户输入
     # 3) Process each user input
     start_time = time.time()
-    output_dir = PROJECT_ROOT / "outputs" / args.model_name / "07_emotion_elicited_generation_circuit_based" / "global_circuit_residuals"
-    ensure_dir(output_dir)
+    output_dir = ensure_out(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                            "global_circuit_residuals")
     output_path = output_dir / args.output_filename
 
     print(f"[+] 开始处理样本 Starting to process samples...")

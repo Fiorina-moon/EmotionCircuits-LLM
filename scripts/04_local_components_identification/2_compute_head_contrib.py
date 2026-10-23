@@ -25,20 +25,21 @@ python scripts/04_local_components_identification/2_compute_head_contrib.py --ma
 python scripts/04_local_components_identification/2_compute_head_contrib.py --emotions happiness,fear --layers 11-20
 """
 
-import os, json, argparse, random
+import os, sys, json, argparse, random
 from collections import defaultdict
+from pathlib import Path
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 from tqdm import tqdm
 import pandas as pd
 
-# HF token (优先使用环境变量，如果没有则尝试默认登录)
-# HF token (prioritize env var, otherwise use default login)
-HF_TOKEN = os.environ.get('HF_TOKEN', None)
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import MODEL_NAME as _CONFIG_MODEL_NAME, ensure_out, hf_token, maybe_login, resolve_model, src
+
+STAGE_DIR = "04_local_components_identification"
 
 EMOTIONS = ["anger", "sadness", "happiness", "fear", "surprise", "disgust"]
 VALENCES = ["positive", "neutral", "negative"]
@@ -76,7 +77,7 @@ def load_emo_dirs(model_name):
     加载情绪方向向量（attention）
     Load emotion direction vectors (attention)
     """
-    p = os.path.join("outputs", model_name, "02_emotion_directions", "emo_directions_attention.pt")
+    p = src(model_name, "02_emotion_directions", "emo_directions_attention.pt")
     
     # 处理 PyTorch weights_only 警告
     # Handle PyTorch weights_only warning
@@ -98,8 +99,8 @@ def load_accepted_samples(model_name, emotion, max_samples=50):
     加载成功样本数据（all valence）
     Load successful sample data (all valence)
     """
-    jsonl_path = os.path.join("outputs", model_name, "01_emotion_elicited_generation_prompt_based",
-                              "labeled", "sev", "accepted.jsonl")
+    jsonl_path = str(src(model_name, "01_emotion_elicited_generation_prompt_based",
+                         "labeled", "sev", "accepted.jsonl"))
     samples = []
     if not os.path.exists(jsonl_path):
         return samples
@@ -353,10 +354,10 @@ def save_results(results, baseline_projections, layer_head_counts, emotion, out_
 # 主函数 Main
 def main():
     ap = argparse.ArgumentParser(description="注意力头重要性分析 Attention Head Importance Analysis")
-    ap.add_argument("--model_name", type=str, default="llama32_3b",
+    ap.add_argument("--model_name", type=str, default=_CONFIG_MODEL_NAME,
                    help="模型文件夹名称 Model folder name")
-    ap.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct",
-                   help="模型名称 Model name")
+    ap.add_argument("--model", type=str, default=resolve_model(),
+                   help="模型名称或本地目录 Model name or local directory (默认取自 config.yaml)")
     ap.add_argument("--emotions", default="anger,sadness,happiness,fear,surprise,disgust",
                    help="情绪列表（逗号分隔）Emotion list (comma-separated)")
     ap.add_argument("--layers", default="", 
@@ -370,14 +371,18 @@ def main():
     ap.add_argument("--seed", type=int, default=42,
                    help="随机种子 Random seed")
     args = ap.parse_args()
+
+    # 解析模型来源（本地目录存在时不登录、不联网）
+    # Resolve model source; no login/network when a local directory exists
+    args.model = resolve_model(args.model)
+    maybe_login(args.model)
+    HF_TOKEN = hf_token(args.model)
     
     seed_all(args.seed)
     
     # 确定输出目录
     # Determine output directory
-    output_dir = ensure_dir(os.path.join("outputs", args.model_name, 
-                                         "04_local_components_identification", 
-                                         "attention_heads"))
+    output_dir = str(ensure_out(args.model_name, STAGE_DIR, "attention_heads"))
     
     print(f"[+] Results will be saved to: {output_dir}")
     

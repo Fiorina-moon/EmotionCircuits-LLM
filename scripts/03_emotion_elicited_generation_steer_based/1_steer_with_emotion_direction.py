@@ -19,18 +19,17 @@ Use extracted emotion direction vectors to guide generation for input data
 输出 Output: outputs/{model_name}/03_emotion_steered_generation/{dataset_name}/steered_outputs.jsonl
 """
 
-import os, json, argparse, time
+import os, sys, json, argparse, time
 from pathlib import Path
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 
-# HF token (优先使用环境变量，如果没有则尝试默认登录)
-# HF token (prioritize env var, otherwise use default login)
-HF_TOKEN = os.environ.get('HF_TOKEN', None)
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import (MODEL_NAME as _CONFIG_MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_device, resolve_model, src)
 
 # 6种情绪
 # 6 emotions
@@ -198,10 +197,10 @@ def load_user_inputs(data_path: str, has_valence: bool = False):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model_name", type=str, default="llama32_3b",
+    ap.add_argument("--model_name", type=str, default=_CONFIG_MODEL_NAME,
                    help="模型文件夹名称 Model folder name")
-    ap.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct",
-                   help="HuggingFace模型名称 HuggingFace model name")
+    ap.add_argument("--model", type=str, default=resolve_model(),
+                   help="模型名称或本地目录 Model name or local directory (默认取自 config.yaml)")
     ap.add_argument("--dataset_name", type=str, default="test_set",
                    help="数据集名称 Dataset name")
     ap.add_argument("--direction_type", type=str, default="mlp", choices=["mlp", "attention"],
@@ -222,9 +221,15 @@ def main():
                    help="输入数据路径 Input data path (如不指定则使用默认路径)")
     ap.add_argument("--has_valence", action="store_true",
                    help="数据是否包含多极性 Whether data has multiple valences")
-    ap.add_argument("--device", type=str, default="cuda:0",
+    ap.add_argument("--device", type=str, default=resolve_device(),
                    help="设备 Device")
     args = ap.parse_args()
+
+    # 解析模型来源（本地目录存在时不登录、不联网）
+    # Resolve model source; no login/network when a local directory exists
+    args.model = resolve_model(args.model)
+    maybe_login(args.model)
+    token = hf_token(args.model)
 
     print("情绪引导生成脚本")
     print("Emotion-Steered Generation Script")
@@ -247,7 +252,7 @@ def main():
     
     # 情绪方向向量路径
     # Emotion direction vectors path
-    directions_file = Path("outputs") / model_name / "02_emotion_directions" / f"emo_directions_{args.direction_type}.pt"
+    directions_file = src(model_name, "02_emotion_directions", f"emo_directions_{args.direction_type}.pt")
     
     # 输入数据路径
     # Input data path
@@ -258,8 +263,7 @@ def main():
     
     # 输出路径
     # Output path
-    out_dir = Path("outputs") / model_name / "03_emotion_steered_generation" / dataset_name
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = ensure_out(model_name, "03_emotion_steered_generation", dataset_name)
     output_path = out_dir / "steered_outputs.jsonl"
 
     # 1) 加载情绪方向向量
@@ -282,9 +286,9 @@ def main():
     # 3) 加载模型
     # Load model
     torch_dtype = {"float16":torch.float16,"bfloat16":torch.bfloat16,"float32":torch.float32}[args.dtype]
-    tok = AutoTokenizer.from_pretrained(args.model, use_fast=True, token=HF_TOKEN if HF_TOKEN else True)
+    tok = AutoTokenizer.from_pretrained(args.model, use_fast=True, token=token)
     if tok.pad_token is None: tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch_dtype, device_map=args.device, token=HF_TOKEN if HF_TOKEN else True)
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch_dtype, device_map=args.device, token=token)
     model.eval()
     print(f"[model] loaded on {model.device}")
 

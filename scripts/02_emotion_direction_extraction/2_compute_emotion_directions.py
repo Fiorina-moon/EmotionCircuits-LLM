@@ -21,10 +21,17 @@ Compute emotion direction vectors from residual_dump/attention/ and mlp/
 输出 Output: outputs/{model_name}/02_emotion_directions/emo_directions_mlp.pt 和 emo_directions_attention.pt
 """
 
-import os, argparse
+import os, sys, argparse
 from pathlib import Path
 import numpy as np
 import torch
+
+# 统一配置：读取走 src()（个人目录优先，回退仓库），写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
+STAGE_DIR = "02_emotion_directions"
 
 # 6种情绪
 # 6 emotions
@@ -196,7 +203,7 @@ def compute_attention_emotion_directions(attention_dir, out_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="llama32_3b",
+    parser.add_argument("--model_name", type=str, default=MODEL_NAME,
                        help="模型文件夹名称 Model folder name")
     args = parser.parse_args()
     
@@ -207,9 +214,9 @@ def main():
     # 构建路径
     # Build paths
     model_name = args.model_name
-    attention_dir = Path("outputs") / model_name / "02_emotion_directions" / "residual_dump" / "attention"
-    mlp_dir = Path("outputs") / model_name / "02_emotion_directions" / "residual_dump" / "mlp"
-    out_dir = Path("outputs") / model_name / "02_emotion_directions"
+    attention_dir = src(model_name, STAGE_DIR, "residual_dump", "attention")
+    mlp_dir = src(model_name, STAGE_DIR, "residual_dump", "mlp")
+    out_dir = ensure_out(model_name, STAGE_DIR)
     
     # 检查输入目录是否存在
     # Check if input directories exist

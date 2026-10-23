@@ -11,17 +11,19 @@ Pure text generation script: Uses emotion-guided prompts to generate text
 - 输出 Output: outputs/{model_name}/01_emotion_elicited_generation_prompt_based/generated/{dataset_name}_generated.jsonl
 """
 
-import os, json, time, argparse
+import os, sys, json, time, argparse
 from pathlib import Path
 from typing import Dict, Any
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 
-# HuggingFace Token
-HF_TOKEN = 'Your HuggingFace Token'
-login(token=HF_TOKEN)
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import (
+    MODEL, MODEL_NAME as _CONFIG_MODEL_NAME, ensure_out, hf_token, maybe_login, resolve_model,
+)
 
 # 情绪类型列表 Emotion types
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
@@ -67,8 +69,8 @@ def main():
                        help="输入数据路径 Input data path，如 e.g. data/sev.jsonl 或 data/test_set.jsonl")
     parser.add_argument("--both", action="store_true",
                        help="处理sev和test_set两个数据集 Process both sev and test_set datasets")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct",
-                       help="模型名称 Model name")
+    parser.add_argument("--model", type=str, default=MODEL,
+                       help="模型名称或本地目录 Model name or local directory (默认取自 config.yaml)")
     parser.add_argument("--device", type=str, default="auto",
                        help="设备 Device")
     parser.add_argument("--dtype", type=str, default="float32", choices=["float32","bfloat16","float16"],
@@ -88,7 +90,13 @@ def main():
     parser.add_argument("--no_skip", action="store_true", 
                        help="重新处理所有项目 Reprocess all items")
     args = parser.parse_args()
-    
+
+    # 解析模型来源（本地目录存在时不登录、不联网）
+    # Resolve model source; no login/network when a local directory exists
+    args.model = resolve_model(args.model)
+    maybe_login(args.model)
+    token = hf_token(args.model)
+
     # 确定输入文件列表
     # Determine input file list
     if args.both:
@@ -104,7 +112,7 @@ def main():
     # meta-llama/Llama-3.2-3B-Instruct -> llama32_3b
     model_name = args.model.split('/')[-1].lower().replace('-', '').replace('.', '')
     if 'llama32' in model_name and '3b' in model_name:
-        model_folder = 'llama32_3b'
+        model_folder = _CONFIG_MODEL_NAME
     else:
         model_folder = model_name  # 其他模型使用原名 Use original name for other models
 
@@ -117,7 +125,7 @@ def main():
     # 加载分词器和模型（只加载一次）
     # Load tokenizer and model (only once)
     print("Loading tokenizer and model...")
-    tok = AutoTokenizer.from_pretrained(args.model, use_fast=True, token=HF_TOKEN)
+    tok = AutoTokenizer.from_pretrained(args.model, use_fast=True, token=token)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 
@@ -126,7 +134,7 @@ def main():
         torch_dtype=torch_dtype,
         device_map=args.device,
         attn_implementation=args.attn_impl,
-        token=HF_TOKEN
+        token=token
     )
     model.eval()
     print(f"Model loaded on device: {model.device}\n")
@@ -143,10 +151,9 @@ def main():
         
         dataset_name = data_path.stem  # sev 或 test_set
         
-        # 构建输出路径
-        # Build output path: outputs/{model_folder}/01_emotion_elicited_generation_prompt_based/generated/{dataset_name}_generated.jsonl
-        out_dir = Path("outputs") / model_folder / "01_emotion_elicited_generation_prompt_based" / "generated"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        # 构建输出路径（个人输出目录，见 config.yaml）
+        # Build output path (personal output root, see config.yaml)
+        out_dir = ensure_out(model_folder, "01_emotion_elicited_generation_prompt_based", "generated")
         
         jsonl_path = out_dir / f"{dataset_name}_generated.jsonl"
         

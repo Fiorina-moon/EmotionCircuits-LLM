@@ -21,7 +21,7 @@ Finally: Average all groups' delta_g,e[L] to get emo_diff[e][L]
 - 输出 Output: outputs/{model_name}/05_emotion_diff_vector_computation/mlp_emotion_diff/
 """
 
-import os, re, json, argparse
+import os, sys, re, json, argparse
 from pathlib import Path
 import torch
 import numpy as np
@@ -33,7 +33,12 @@ from collections import defaultdict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
+STAGE_DIR = "05_emotion_diff_vector_computation"
 # 六个基础情绪
 # Six basic emotions
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
@@ -330,12 +335,12 @@ def main():
     # 设置默认路径
     # Set default paths
     if args.input_dir is None:
-        args.input_dir = PROJECT_ROOT / f"outputs/{args.model_name}/05_emotion_diff_vector_computation/down_proj_input"
+        args.input_dir = src(args.model_name, STAGE_DIR, "down_proj_input")
     else:
         args.input_dir = Path(args.input_dir)
-    
+
     if args.output_dir is None:
-        args.output_dir = PROJECT_ROOT / f"outputs/{args.model_name}/05_emotion_diff_vector_computation/mlp_emotion_diff"
+        args.output_dir = ensure_out(args.model_name, STAGE_DIR, "mlp_emotion_diff")
     else:
         args.output_dir = Path(args.output_dir)
 

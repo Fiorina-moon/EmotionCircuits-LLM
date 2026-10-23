@@ -11,7 +11,7 @@ Compute cosine similarity matrix for 56 positions (28 layers × 2 positions: Att
 - 输出 Output: outputs/{model_name}/06_emotion_circuit_integration/emotion_direction_similarity/
 """
 
-import os
+import os, sys
 from pathlib import Path
 import numpy as np
 import torch
@@ -25,12 +25,17 @@ from sklearn.metrics.pairwise import cosine_similarity
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
+STAGE_DIR = "06_emotion_circuit_integration"
+
 # 设置matplotlib支持中文
 # Set matplotlib to support Chinese fonts
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Liberation Sans']
 plt.rcParams['axes.unicode_minus'] = False
-
-MODEL_NAME = "llama32_3b"
 EMOS6 = ["anger", "sadness", "happiness", "fear", "surprise", "disgust"]
 
 # ============== 工具函数 / Utility Functions ==============
@@ -50,7 +55,7 @@ def load_emotion_directions(model_name=MODEL_NAME):
     """
     print("Loading emotion direction vectors...")
     
-    data_dir = PROJECT_ROOT / "outputs" / model_name / "02_emotion_directions"
+    data_dir = src(model_name, "02_emotion_directions")
     attn_path = data_dir / "emo_directions_attention.pt"
     mlp_path = data_dir / "emo_directions_mlp.pt"
     
@@ -394,7 +399,7 @@ def main():
     
     # 输出目录
     # Output directory
-    out_dir = ensure_dir(PROJECT_ROOT / "outputs" / MODEL_NAME / "06_emotion_circuit_integration" / "emotion_direction_similarity")
+    out_dir = ensure_out(MODEL_NAME, STAGE_DIR, "emotion_direction_similarity")
     
     # 1. 加载数据
     # 1. Load data

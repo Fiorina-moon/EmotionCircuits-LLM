@@ -29,7 +29,11 @@ from typing import Dict, Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：OPENAI_API_KEY 由 .env / 环境变量提供
+# Unified config: OPENAI_API_KEY comes from .env / environment variables
+sys.path.insert(0, str(PROJECT_ROOT))
+import scripts.project_config  # noqa: F401  (加载 .env / loads .env)
+from scripts.project_config import MODEL_NAME, ensure_out, src
 LABELING_MODEL = "gpt-4o-mini"
 
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
@@ -46,7 +50,7 @@ if not OPENAI_API_KEY:
     print("警告 Warning: OPENAI_API_KEY 环境变量未设置 not set")
     print("请设置环境变量 Please set: export OPENAI_API_KEY='your-api-key'")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # ============== Prompt 模板 ==============
 # ============== Prompt Templates ==============
@@ -203,13 +207,18 @@ def main():
     ap.add_argument("--max_records", type=int, default=None,
                     help="最大处理记录数（用于测试）Max records to process (for testing)")
     args = ap.parse_args()
+
+    if client is None:
+        print("[ERROR] OPENAI_API_KEY 未设置，请在 .env 或环境变量中配置 / "
+              "OPENAI_API_KEY is not set; configure it in .env")
+        return
     
     # 路径配置
     # Path configuration
-    base_dir = PROJECT_ROOT / "outputs" / args.model_name / "07_emotion_elicited_generation_circuit_based" / "circuit_steered_generation"
-    input_path = base_dir / args.input_filename
-    output_dir = base_dir / "labeled"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    input_path = src(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                     "circuit_steered_generation", args.input_filename)
+    output_dir = ensure_out(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                            "circuit_steered_generation", "labeled")
     output_path = output_dir / args.output_filename
     
     print(f"\n{'='*70}")

@@ -11,23 +11,21 @@ Dump Residual-Aligned Sublayer Activations
 - 输出 Output: outputs/{model_name}/02_emotion_directions/residual_dump/attention/ 和 mlp/
 """
 
-import os, json, time, traceback, argparse
+import os, sys, json, time, traceback, argparse
 from pathlib import Path
 import torch
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 from collections import defaultdict
 
-# HF token (优先使用环境变量，如果没有则尝试默认登录)
-# HF token (prioritize env var, otherwise use default login)
-HF_TOKEN = os.environ.get('HF_TOKEN', None)
-if HF_TOKEN:
-    login(token=HF_TOKEN)
-else:
-    # 如果已经通过 huggingface-cli login 登录过，这里会自动使用已保存的 token
-    # If already logged in via huggingface-cli login, this will use saved token
-    pass
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import (MODEL_NAME as _CONFIG_MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_device, resolve_model, src)
+
+STAGE_DIR = "02_emotion_directions"
+
 
 # 情绪向量计算相关
 EMOS6 = ["anger","sadness","happiness","fear","surprise","disgust"]
@@ -216,15 +214,21 @@ def save_group_outputs(group_data, attention_outputs, mlp_outputs, last_idx, att
 # ============== 主流程 ==============
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="llama32_3b",
+    parser.add_argument("--model_name", type=str, default=_CONFIG_MODEL_NAME,
                        help="模型文件夹名称 Model folder name")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct",
-                       help="HuggingFace模型名称 HuggingFace model name")
-    parser.add_argument("--device", type=str, default="cuda:0",
+    parser.add_argument("--model", type=str, default=resolve_model(),
+                       help="模型名称或本地目录 Model name or local directory (默认取自 config.yaml)")
+    parser.add_argument("--device", type=str, default=resolve_device(),
                        help="设备 Device")
     parser.add_argument("--dtype", type=str, default="float32", choices=["float32","bfloat16","float16"],
                        help="数据类型 Data type")
     args = parser.parse_args()
+
+    # 解析模型来源（本地目录存在时不登录、不联网）
+    # Resolve model source; no login/network when a local directory exists
+    args.model = resolve_model(args.model)
+    maybe_login(args.model)
+    HF_TOKEN = hf_token(args.model)
     
     # 固定使用 sev 数据集
     # Fixed to use sev dataset
@@ -233,7 +237,7 @@ def main():
     
     # 构建输入路径
     # Build input path
-    input_path = Path("outputs") / model_name / "01_emotion_elicited_generation_prompt_based" / "labeled" / dataset_name / "accepted.jsonl"
+    input_path = src(model_name, "01_emotion_elicited_generation_prompt_based", "labeled", dataset_name, "accepted.jsonl")
     
     if not input_path.exists():
         print(f"[ERROR] Input file not found: {input_path}")
@@ -241,10 +245,8 @@ def main():
     
     # 构建输出路径
     # Build output paths
-    attention_save_dir = Path("outputs") / model_name / "02_emotion_directions" / "residual_dump" / "attention"
-    mlp_save_dir = Path("outputs") / model_name / "02_emotion_directions" / "residual_dump" / "mlp"
-    attention_save_dir.mkdir(parents=True, exist_ok=True)
-    mlp_save_dir.mkdir(parents=True, exist_ok=True)
+    attention_save_dir = ensure_out(model_name, STAGE_DIR, "residual_dump", "attention")
+    mlp_save_dir = ensure_out(model_name, STAGE_DIR, "residual_dump", "mlp")
     
     # 数据类型映射
     # Data type mapping

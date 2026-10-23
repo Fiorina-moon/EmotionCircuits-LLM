@@ -27,7 +27,7 @@ Integrate global circuit quota (neurons + attention heads) per emotion based on 
     - outputs/{model_name}/06_emotion_circuit_integration/global_circuit/{emotion}_alloc_log.csv
 """
 
-import os, json, argparse, math, random
+import os, sys, json, argparse, math, random
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -40,7 +40,11 @@ from collections import defaultdict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
 N_LAYERS = 28
 HEADS_PER_LAYER = 24  # 3B: 3072/24=128
 
@@ -374,16 +378,14 @@ def main():
     args = ap.parse_args()
     seed_all(args.seed)
 
-    # 路径配置
-    # Path configuration
-    base_dir = PROJECT_ROOT / "outputs" / args.model_name
-    dir_06 = base_dir / "06_emotion_circuit_integration"
-    dir_04 = base_dir / "04_local_components_identification"
-    
-    importance_csv = dir_06 / "importance_all_alpha_mean_emotion_all_probability.csv"
-    neuron_dir = dir_04 / "mlp_neurons"
-    head_dir = dir_04 / "attention_heads"
-    out_dir = ensure_dir(dir_06 / "global_circuit")
+    # 路径配置（读取个人目录优先，回退仓库；写入个人目录）
+    # Path configuration (read personal first with repo fallback; write to personal)
+    STAGE_DIR = "06_emotion_circuit_integration"
+    importance_csv = src(args.model_name, STAGE_DIR,
+                         "importance_all_alpha_mean_emotion_all_probability.csv")
+    neuron_dir = src(args.model_name, "04_local_components_identification", "mlp_neurons")
+    head_dir = src(args.model_name, "04_local_components_identification", "attention_heads")
+    out_dir = ensure_out(args.model_name, STAGE_DIR, "global_circuit")
 
     emotions = [e.strip() for e in args.emotions.split(",") if e.strip()]
     

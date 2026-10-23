@@ -24,19 +24,21 @@ Calculate per-neuron contribution to pushing hidden states along emotion directi
   - outputs/{model_name}/02_emotion_directions/emo_directions_mlp.pt
 """
 
-import os, json, argparse, random
+import os, sys, json, argparse, random
 from collections import defaultdict
+from pathlib import Path
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from huggingface_hub import login
 from tqdm import tqdm
 
-# HF token (优先使用环境变量，如果没有则尝试默认登录)
-# HF token (prioritize env var, otherwise use default login)
-HF_TOKEN = os.environ.get('HF_TOKEN', None)
-if HF_TOKEN:
-    login(token=HF_TOKEN)
+# 统一配置：模型、设备、输出目录均来自 config.yaml
+# Unified config: model, device and output paths come from config.yaml
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import (MODEL_NAME as _CONFIG_MODEL_NAME, ensure_out, hf_token,
+                                    maybe_login, resolve_device, resolve_model, src)
+
+STAGE_DIR = "04_local_components_identification"
 
 VALENCES = ["positive","neutral","negative"]
 
@@ -67,7 +69,7 @@ def load_emo_dirs(model_name):
     加载情绪方向向量
     Load emotion direction vectors
     """
-    p = os.path.join("outputs", model_name, "02_emotion_directions", "emo_directions_mlp.pt")
+    p = src(model_name, "02_emotion_directions", "emo_directions_mlp.pt")
     obj = torch.load(p, map_location="cpu")
     dirs = {e: obj["dirs"][e] for e in obj["emotions"]}  # {emo: [L,H]}
     n_layers = obj["layers"]; Hdim = obj["hidden"]
@@ -83,8 +85,8 @@ def load_accepted_meta(model_name):
     加载已接受的样本元数据
     Load accepted sample metadata
     """
-    jsonl = os.path.join("outputs", model_name, "01_emotion_elicited_generation_prompt_based", 
-                         "labeled", "sev", "accepted.jsonl")
+    jsonl = str(src(model_name, "01_emotion_elicited_generation_prompt_based",
+                    "labeled", "sev", "accepted.jsonl"))
     rows = []
     if not os.path.exists(jsonl):
         print(f"[-] Not found: {jsonl}")
@@ -302,17 +304,17 @@ def save_aggregated_csv(base_out_dir, emotion, per_layer):
 # ---------------- 主函数 Main ----------------
 def main():
     ap = argparse.ArgumentParser(description="计算神经元贡献 Compute neuron contributions")
-    ap.add_argument("--model_name", type=str, default="llama32_3b",
+    ap.add_argument("--model_name", type=str, default=_CONFIG_MODEL_NAME,
                    help="模型文件夹名称 Model folder name")
-    ap.add_argument("--model", type=str, default="meta-llama/Llama-3.2-3B-Instruct",
-                   help="模型名称 Model name")
+    ap.add_argument("--model", type=str, default=resolve_model(),
+                   help="模型名称或本地目录 Model name or local directory (默认取自 config.yaml)")
     ap.add_argument("--emotions", default="anger,sadness,happiness,fear,surprise,disgust",
                    help="情绪列表（逗号分隔）Emotion list (comma-separated)")
     ap.add_argument("--layers", default="", 
                    help="层号（逗号分隔；空=全层）Layer numbers (comma-separated; empty=all layers)")
     ap.add_argument("--max_per_valence", type=int, default=None,
                    help="每种极性最多抽多少样本（None=全部）Max samples per valence (None=all)")
-    ap.add_argument("--device", type=str, default="cuda:0",
+    ap.add_argument("--device", type=str, default=resolve_device(),
                    help="设备 Device")
     ap.add_argument("--dtype", type=str, default="float32", choices=["float32","bfloat16","float16"],
                    help="数据类型 Data type")
@@ -320,11 +322,17 @@ def main():
                    help="随机种子 Random seed")
     args = ap.parse_args()
 
+    # 解析模型来源（本地目录存在时不登录、不联网）
+    # Resolve model source; no login/network when a local directory exists
+    args.model = resolve_model(args.model)
+    maybe_login(args.model)
+    HF_TOKEN = hf_token(args.model)
+
     seed_all(args.seed)
 
     # 确定输出目录
     # Determine output directory
-    output_dir = ensure_dir(os.path.join("outputs", args.model_name, "04_local_components_identification", "mlp_neurons"))
+    output_dir = str(ensure_out(args.model_name, STAGE_DIR, "mlp_neurons"))
 
     # 加载情绪方向向量
     # Load emotion direction vectors
@@ -386,7 +394,7 @@ def main():
         print(f"[{emo}] saved per-sample to: {per_emotion_dir}")
         print(f"[{emo}] saved aggregated csv: {csv_path}")
 
-    print(f"\n[✓] Done! Check outputs/{args.model_name}/04_local_components_identification/mlp_neurons/")
+    print(f"\n[✓] Done! Check {output_dir}/")
     print(f"    - per_sample/{{emotion}}/layer{{L}}.npz")
     print(f"    - contrib_mean_{{emotion}}.csv")
 

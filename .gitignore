@@ -54,3 +54,12 @@ Thumbs.db
 # Environment variables
 .env
 
+# Local model weights
+models/
+
+# Personal run outputs (configured via config.yaml: paths.output_dir)
+outputs_local/
+
+# Personal quick_start demo results
+quick_start_output_local/
+

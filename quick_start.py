@@ -35,11 +35,25 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+# Windows 控制台默认 GBK，无法输出 ✓ 等字符
+# Windows consoles default to GBK and cannot print characters like ✓
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 # ============== 配置 ==============
 # ============== Configuration ==============
 PROJECT_ROOT = Path(__file__).resolve().parent
-MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-MODEL_NAME = "llama32_3b"
+
+# 模型、设备、输出目录统一来自 config.yaml（可用环境变量覆盖）
+# Model, device and output paths all come from config.yaml (env vars override)
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import (MODEL, MODEL_NAME, QUICK_START_OUTPUT_DIR,
+                                    hf_token, src)
+
 D_MODEL = 3072
 HEADS_PER_LAYER = 24
 HEAD_DIM = D_MODEL // HEADS_PER_LAYER
@@ -53,7 +67,7 @@ def load_emotion_circuit(emotion):
     加载情绪电路配置
     Load emotion circuit configuration
     """
-    circuit_file = PROJECT_ROOT / "outputs" / MODEL_NAME / "06_emotion_circuit_integration" / "global_circuit" / f"{emotion}.json"
+    circuit_file = src(MODEL_NAME, "06_emotion_circuit_integration", "global_circuit", f"{emotion}.json")
     
     if not circuit_file.exists():
         raise FileNotFoundError(f"电路文件不存在 Circuit file not found: {circuit_file}")
@@ -77,7 +91,7 @@ def load_emotion_residuals(emotion):
     """
     # MLP残差
     # MLP residuals
-    mlp_file = PROJECT_ROOT / "outputs" / MODEL_NAME / "05_emotion_diff_vector_computation" / "mlp_emotion_diff" / "emo_diff_all.npz"
+    mlp_file = src(MODEL_NAME, "05_emotion_diff_vector_computation", "mlp_emotion_diff", "emo_diff_all.npz")
     data = np.load(mlp_file)
     
     neuron_diffs = {}
@@ -91,7 +105,7 @@ def load_emotion_residuals(emotion):
     # Attention残差
     # Attention residuals
     head_diffs = {}
-    attn_dir = PROJECT_ROOT / "outputs" / MODEL_NAME / "05_emotion_diff_vector_computation" / "attention_emotion_diff" / "emo_diff" / emotion
+    attn_dir = src(MODEL_NAME, "05_emotion_diff_vector_computation", "attention_emotion_diff", "emo_diff", emotion)
     
     for layer in range(28):
         layer_file = attn_dir / f"L{layer}.npy"
@@ -294,11 +308,17 @@ def main():
                        help="注入系数 Injection scale (默认 default: anger=0.8, 其他 others=1.0)")
     parser.add_argument("--device", type=str, default=None,
                        help="设备 Device (默认自动检测 default: auto-detect GPU/CPU)")
+    parser.add_argument("--model_path", type=str, default=None,
+                       help="本地模型目录 Local model directory (默认 default: models/Llama-3.2-3B-Instruct，不存在时回退到 HuggingFace)")
     parser.add_argument("--skip_baseline", action="store_true",
                        help="跳过基线生成，只输出情绪调控结果 Skip baseline generation")
-    
+
     args = parser.parse_args()
-    
+
+    # 解析模型来源：--model_path 优先，否则由 model_utils 决定（默认本地目录）
+    # Resolve model source: --model_path wins, otherwise model_utils decides (local by default)
+    model_id = args.model_path or MODEL
+
     # 自动设置最佳scale
     # Auto set best scale
     if args.scale is None:
@@ -325,15 +345,15 @@ def main():
     
     # 加载模型
     # Load model
-    print(f"🔧 加载模型 Loading model: {MODEL}...")
-    HF_TOKEN = os.environ.get('HF_TOKEN', None)
-    
-    tokenizer = AutoTokenizer.from_pretrained(MODEL, token=HF_TOKEN if HF_TOKEN else True)
+    print(f"🔧 加载模型 Loading model: {model_id}...")
+    token = hf_token(model_id)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, token=token)
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL,
+        model_id,
         torch_dtype=torch.float16,
         device_map=args.device,
-        token=HF_TOKEN if HF_TOKEN else True
+        token=token
     )
     print(f"   ✓ 模型加载完成 Model loaded\n")
     
@@ -375,8 +395,10 @@ def main():
         "model": MODEL
     }
     
-    output_dir = PROJECT_ROOT / "quick_start_outputs"
-    output_dir.mkdir(exist_ok=True)
+    # 演示结果放在仓库根目录，与仓库自带的 quick_start_outputs/ 并列
+    # Demo results go to the repo root, alongside the bundled quick_start_outputs/
+    output_dir = QUICK_START_OUTPUT_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # 使用时间戳避免覆盖
     # Use timestamp to avoid overwrite

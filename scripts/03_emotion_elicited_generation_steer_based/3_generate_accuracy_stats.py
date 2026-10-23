@@ -11,19 +11,29 @@ Reads GPT labeling results, calculates accuracy by emotion and valence
 输出 Output: outputs/{model_name}/03_emotion_steered_generation/{dataset_name}/accuracy_stats.json
 """
 
-import json, argparse
+import json, sys, argparse
 from pathlib import Path
 from collections import defaultdict
 
-def generate_accuracy_stats(output_dir: Path, dataset_name: str):
+# 统一配置：读取走 src()（个人目录优先，回退仓库），写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.project_config import MODEL_NAME, ensure_out, src
+
+STAGE_DIR = "03_emotion_steered_generation"
+
+
+def generate_accuracy_stats(output_dir: Path, dataset_name: str, write_dir: Path = None):
     """
     为指定数据集生成准确率统计
     Generate accuracy statistics for specified dataset
     """
-    
+
     dataset_dir = output_dir / dataset_name
     labeled_path = dataset_dir / "labeled_results.jsonl"
-    stats_path = dataset_dir / "accuracy_stats.json"
+    stats_path = (write_dir if write_dir is not None else dataset_dir) / "accuracy_stats.json"
+    if write_dir is not None:
+        write_dir.mkdir(parents=True, exist_ok=True)
     
     if not labeled_path.exists():
         print(f"[ERROR] Labeled results file not found: {labeled_path}")
@@ -111,7 +121,7 @@ def generate_accuracy_stats(output_dir: Path, dataset_name: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="llama32_3b",
+    parser.add_argument("--model_name", type=str, default=MODEL_NAME,
                        help="模型文件夹名称 Model folder name")
     parser.add_argument("--dataset", type=str, default="test_set",
                        help="数据集名称 Dataset name (如 test_set, user_test)，不指定则处理所有数据集")
@@ -121,7 +131,7 @@ def main():
     
     # 确定输出目录路径
     # Determine output directory path
-    output_dir = Path("outputs") / args.model_name / "03_emotion_steered_generation"
+    output_dir = src(args.model_name, STAGE_DIR)
     
     if not output_dir.exists():
         print(f"[ERROR] Output directory not found: {output_dir}")
@@ -149,7 +159,11 @@ def main():
     print("=" * 70)
     
     for dataset_name in datasets:
-        result = generate_accuracy_stats(output_dir, dataset_name)
+        result = generate_accuracy_stats(
+            output_dir,
+            dataset_name,
+            write_dir=ensure_out(args.model_name, STAGE_DIR, dataset_name),
+        )
         
         if result:
             stats, stats_path = result

@@ -18,7 +18,7 @@ Global circuit emotion injection accuracy statistics
   - 输出 Output: outputs/{model_name}/07_emotion_elicited_generation_circuit_based/circuit_steered_generation/labeled/accuracy_stats.json
 """
 
-import json, argparse
+import os, sys, json, argparse
 from pathlib import Path
 from collections import defaultdict
 
@@ -27,8 +27,12 @@ from collections import defaultdict
 # 项目根目录：自动获取脚本所在位置的上两级目录
 # Project root: automatically get the directory two levels up from the script location
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+os.chdir(PROJECT_ROOT)
 
-MODEL_NAME = "llama32_3b"
+# 统一配置：读取走 src()，写入走个人输出目录
+# Unified config: reads use src(), writes go to the personal output root
+sys.path.insert(0, str(PROJECT_ROOT))
+from scripts.project_config import MODEL_NAME, ensure_out, src
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
 VALENCES = ["positive", "neutral", "negative"]
 
@@ -174,9 +178,10 @@ def main():
     
     # 路径配置
     # Path configuration
-    base_dir = PROJECT_ROOT / "outputs" / args.model_name / "07_emotion_elicited_generation_circuit_based" / "circuit_steered_generation" / "labeled"
-    labels_file = base_dir / args.input_filename
-    stats_file = base_dir / args.output_filename
+    labels_file = src(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                      "circuit_steered_generation", "labeled", args.input_filename)
+    stats_file = ensure_out(args.model_name, "07_emotion_elicited_generation_circuit_based",
+                            "circuit_steered_generation", "labeled") / args.output_filename
     
     print(f"\n{'='*70}")
     print(f"全局电路情绪注入准确率统计 Global Circuit Emotion Injection Accuracy Statistics")
