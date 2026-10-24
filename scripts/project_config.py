@@ -13,11 +13,12 @@ Unified runtime configuration
     HF_TOKEN           HuggingFace token（本地模型时为 None）
     DEVICE / DTYPE     默认设备与精度字符串
     OUTPUT_ROOT        个人输出根目录（默认 outputs_local/）
-    REPO_OUTPUT_ROOT   仓库自带产物根目录（默认 outputs/，只读回退）
+    REPO_OUTPUT_ROOT   作者预跑产物根目录（默认 outputs/）
+    REPO_FALLBACK      是否允许读取作者产物（默认 False）
 
 工具函数 Helpers:
     out(*parts)        个人输出目录下的路径（写入用）
-    src(*parts)        读取用：个人目录存在则用个人目录，否则回退到仓库目录
+    src(*parts)        读取用：默认只读个人目录；repo_fallback=true 时才回退仓库
     ensure_out(*parts) 创建并返回个人输出目录
     maybe_login(model) 仅在远程模型 + 有 token 时登录
     hf_token(model)    本地模型返回 None
@@ -71,6 +72,7 @@ CFG = _load_config(CONFIG_FILE)
 _model_cfg = CFG.get("model") or {}
 _path_cfg = CFG.get("paths") or {}
 _hf_cfg = CFG.get("huggingface") or {}
+_lbl_cfg = CFG.get("labeling") or {}
 
 MODEL_NAME = str(_path_cfg.get("model_name") or "llama32_3b")
 
@@ -150,9 +152,43 @@ def maybe_login(model=None):
     return token
 
 
+# ---------------- 打标渠道 Labeling channel ----------------
+LABEL_BASE_URL = os.environ.get("LABEL_BASE_URL") or _lbl_cfg.get("base_url") or None
+LABEL_MODEL = os.environ.get("LABEL_MODEL") or _lbl_cfg.get("model") or "gpt-4o-mini"
+
+# key 变量名可配置（默认 LABEL_API_KEY），并回退到 OPENAI_API_KEY
+_LABEL_KEY_ENV = _lbl_cfg.get("api_key_env") or "LABEL_API_KEY"
+LABEL_API_KEY = os.environ.get(_LABEL_KEY_ENV) or os.environ.get("OPENAI_API_KEY") or None
+
+
+def make_label_client():
+    """按 config.yaml 的 labeling 配置创建 OpenAI 兼容客户端；无 key 时返回 None。"""
+    if not LABEL_API_KEY:
+        return None
+    from openai import OpenAI
+
+    kwargs = {"api_key": LABEL_API_KEY}
+    if LABEL_BASE_URL:
+        kwargs["base_url"] = LABEL_BASE_URL
+    return OpenAI(**kwargs)
+
+
 # ---------------- 路径 Paths ----------------
 OUTPUT_ROOT = _abs(os.environ.get("OUTPUT_DIR") or _path_cfg.get("output_dir") or "outputs_local")
 REPO_OUTPUT_ROOT = _abs(_path_cfg.get("repo_output_dir") or "outputs")
+
+
+def _as_bool(value, default=False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+# 是否允许读取作者的 outputs/。默认关闭：只用自己的 OUTPUT_ROOT。
+# Whether reads may fall back to the author's outputs/. Off by default.
+REPO_FALLBACK = _as_bool(os.environ.get("REPO_FALLBACK", _path_cfg.get("repo_fallback")), True)
 QUICK_START_OUTPUT_DIR = _abs(
     os.environ.get("QUICK_START_OUTPUT_DIR")
     or _path_cfg.get("quick_start_output_dir")
@@ -166,9 +202,9 @@ def out(*parts) -> Path:
 
 
 def src(*parts) -> Path:
-    """读取用：个人目录存在则用个人目录，否则回退到仓库目录。"""
+    """读取用：默认只返回个人目录；REPO_FALLBACK=true 时才回退到作者目录。"""
     personal = out(*parts)
-    if personal.exists():
+    if personal.exists() or not REPO_FALLBACK:
         return personal
     repo = REPO_OUTPUT_ROOT.joinpath(*[str(p) for p in parts])
     return repo if repo.exists() else personal

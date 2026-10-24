@@ -20,8 +20,12 @@ model:
 paths:
   # 个人运行产物目录（已在 .gitignore 中排除，不会污染仓库自带的 outputs/）
   output_dir: outputs_local
-  # 仓库自带的已发布产物目录，仅在个人目录缺少某个文件时作为只读回退
+  # 仓库自带的已发布产物目录（作者的预跑结果）
   repo_output_dir: outputs
+  # 是否允许回退到 repo_output_dir：
+  #   false（默认）= 只用自己的产物，个人目录缺文件就报错，避免混用作者结果
+  #   true          = 个人目录缺文件时读取作者结果（旧的混合模式）
+  repo_fallback: false
   # 输出子目录名，沿用仓库约定（llama32_3b）
   model_name: llama32_3b
   # quick_start 演示结果目录（相对仓库根目录，与仓库自带的 quick_start_outputs/ 并列）
@@ -32,3 +36,12 @@ huggingface:
   endpoint: ""
   # 仅在使用远程模型且提供 HF_TOKEN 时登录；本地模型始终不联网
   login: true
+
+# 文本打标渠道（阶段 01/03/07 的 label_* 脚本共用）
+# Text labeling channel (shared by the label_* scripts in stages 01/03/07)
+labeling:
+  # OpenAI 兼容接口地址
+  base_url: https://llmapi.paratera.com/v1
+  model: Qwen3.5-397B-A17B
+  # 从 .env / 环境变量读取的 key 名称；未设置时回退到 OPENAI_API_KEY
+  api_key_env: LABEL_API_KEY

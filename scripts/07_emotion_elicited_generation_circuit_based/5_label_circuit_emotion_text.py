@@ -29,28 +29,26 @@ from typing import Dict, Any
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 os.chdir(PROJECT_ROOT)
 
-# 统一配置：OPENAI_API_KEY 由 .env / 环境变量提供
-# Unified config: OPENAI_API_KEY comes from .env / environment variables
+# 统一配置：打标渠道与 key 由 config.yaml 的 labeling 段和 .env 提供
+# Unified config: labeling channel/key come from config.yaml and .env
 sys.path.insert(0, str(PROJECT_ROOT))
 import scripts.project_config  # noqa: F401  (加载 .env / loads .env)
-from scripts.project_config import MODEL_NAME, ensure_out, src
-LABELING_MODEL = "gpt-4o-mini"
+from scripts.project_config import (LABEL_MODEL, MODEL_NAME, ensure_out,
+                                    make_label_client, src)
+LABELING_MODEL = LABEL_MODEL
 
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
 VALENCES = ["positive", "neutral", "negative"]
 
 # ============== OpenAI 客户端 ==============
 # ============== OpenAI Client ==============
-from openai import OpenAI
 
 # 从环境变量读取API key
 # Read API key from environment variable
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', None)
-if not OPENAI_API_KEY:
-    print("警告 Warning: OPENAI_API_KEY 环境变量未设置 not set")
-    print("请设置环境变量 Please set: export OPENAI_API_KEY='your-api-key'")
-
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+client = make_label_client()
+if client is None:
+    print("警告 Warning: 未找到打标 API key，请在 .env 中设置 LABEL_API_KEY")
+    print("No labeling API key; set LABEL_API_KEY in .env")
 
 # ============== Prompt 模板 ==============
 # ============== Prompt Templates ==============
@@ -209,8 +207,8 @@ def main():
     args = ap.parse_args()
 
     if client is None:
-        print("[ERROR] OPENAI_API_KEY 未设置，请在 .env 或环境变量中配置 / "
-              "OPENAI_API_KEY is not set; configure it in .env")
+        print("[ERROR] 打标 API key 未设置，请在 .env 中配置 LABEL_API_KEY / "
+              "LABEL_API_KEY is not set; configure it in .env")
         return
     
     # 路径配置

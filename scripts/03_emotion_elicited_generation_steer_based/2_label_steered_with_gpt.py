@@ -18,7 +18,8 @@ from typing import Dict, Any
 # 统一配置（会加载仓库根目录的 .env）
 # Unified config (also loads .env from the repository root)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.project_config import MODEL_NAME, ensure_out, src
+from scripts.project_config import (LABEL_MODEL, MODEL_NAME, ensure_out,
+                                    make_label_client, src)
 
 STAGE_DIR = "03_emotion_steered_generation"
 
@@ -32,16 +33,14 @@ VALENCES = ["positive", "neutral", "negative"]
 
 # ========= OpenAI 客户端 =========
 # OpenAI Client
-from openai import OpenAI
 
-# 从环境变量读取 API key
-# Read API key from environment variable
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', None)
-if not OPENAI_API_KEY:
-    print("[WARNING] OPENAI_API_KEY not found in environment variables. Please set it before running.")
-    print("          export OPENAI_API_KEY='your-api-key-here'")
+# 打标渠道（config.yaml: labeling）
+# Labeling channel (OpenAI-compatible endpoint from config.yaml)
+client = make_label_client()
+if client is None:
+    print("[WARNING] 未找到打标 API key，请在 .env 中设置 LABEL_API_KEY")
+    print("          No labeling API key; set LABEL_API_KEY in .env")
 
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # GPT系统提示
 # GPT system prompt
@@ -162,7 +161,7 @@ def main():
                        help="模型文件夹名称 Model folder name")
     parser.add_argument("--dataset_name", type=str, default="test_set",
                        help="数据集名称 Dataset name")
-    parser.add_argument("--gpt_model", type=str, default="gpt-4o-mini",
+    parser.add_argument("--gpt_model", type=str, default=LABEL_MODEL,
                        help="GPT模型名称 GPT model name")
     args = parser.parse_args()
     
@@ -180,7 +179,8 @@ def main():
         sys.exit(1)
     
     if client is None:
-        print(f"[ERROR] OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
+        print("[ERROR] 打标 API key 未设置，请在 .env 中配置 LABEL_API_KEY / "
+              "LABEL_API_KEY is not set; configure it in .env")
         sys.exit(1)
 
     print("情绪引导生成文本的GPT打标")

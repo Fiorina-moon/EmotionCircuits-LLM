@@ -15,20 +15,20 @@ import os, sys, json, time, argparse
 from pathlib import Path
 from typing import Dict, Any
 
-from openai import OpenAI
 
 # 统一配置（会加载仓库根目录的 .env）
 # Unified config (also loads .env from the repository root)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.project_config import MODEL_NAME, ensure_out, src
+from scripts.project_config import (LABEL_MODEL, MODEL_NAME, ensure_out,
+                                    make_label_client, src)
 
 STAGE_DIR = "01_emotion_elicited_generation_prompt_based"
 
-# ====== OpenAI (GPT-4o-mini 打标) ======
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# ====== 打标渠道（config.yaml: labeling）======
+# Labeling channel (OpenAI-compatible endpoint from config.yaml)
 # 延迟到 main() 中检查，未配置时仍可查看 --help
 # Checked in main(); --help still works without a key
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+client = make_label_client()
 
 EMOTIONS = ["anger","sadness","happiness","fear","surprise","disgust"]
 
@@ -137,7 +137,7 @@ def main():
                        help="处理sev和test_set两个数据集 Process both sev and test_set datasets")
     parser.add_argument("--model_name", type=str, default=MODEL_NAME,
                        help="模型文件夹名 Model folder name")
-    parser.add_argument("--lbl_model", type=str, default="gpt-4o-mini",
+    parser.add_argument("--lbl_model", type=str, default=LABEL_MODEL,
                        help="打标模型 Label model")
     parser.add_argument("--skip_if_exists", action="store_true", default=True,
                        help="跳过已打标的项目 Skip already labeled items")
@@ -146,8 +146,8 @@ def main():
     args = parser.parse_args()
 
     if client is None:
-        print("[ERROR] OPENAI_API_KEY 未设置，请在 .env 或环境变量中配置 / "
-              "OPENAI_API_KEY is not set; configure it in .env")
+        print("[ERROR] 打标 API key 未设置，请在 .env 中配置 LABEL_API_KEY / "
+              "LABEL_API_KEY is not set; configure it in .env")
         return
 
     # 确定输入文件列表
